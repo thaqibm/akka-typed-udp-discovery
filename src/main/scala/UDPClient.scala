@@ -12,8 +12,10 @@ import akka.actor.typed.scaladsl.adapter._
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 import akka.cluster.typed._
-import scala.concurrent.duration.DurationInt
 
+import scala.concurrent.duration.DurationInt
+import ClusterExample.LogActor
+import akka.actor.AddressFromURIString
 
 
 object loggerActor{
@@ -40,11 +42,14 @@ class UdpListenerActor(localInet: InetSocketAddress, remoteInet: InetSocketAddre
   private def ready(udpRef: classic.ActorRef): Receive = {
     case Udp.Received(data, senderIp) => {
       sink ! data.utf8String
+      val cluster = Cluster(context.system.toTyped).manager
+      cluster ! JoinSeedNodes(List(data.utf8String).map(AddressFromURIString.parse))
       timers.cancel("DISCOVERY")
     }
     case SendDiscovery => {
+      val cluster = Cluster(context.system.toTyped)
       println("Sending Discovery to server")
-      udpRef ! Udp.Send(ByteString("Hi"), remoteInet)
+      udpRef ! Udp.Send(ByteString(cluster.selfMember.address.toString), remoteInet)
     }
     case b@Udp.Unbind => {
       udpRef ! b
@@ -65,5 +70,9 @@ object UDPClient extends App {
   val localInet = new InetSocketAddress(0)
   val sys = classic.ActorSystem("sys", config)
   val sink = sys.spawn(loggerActor(), "msgLogger")
+
+  val cluster = Cluster(sys.toTyped)
+  cluster.manager ! JoinSeedNodes(Seq(cluster.selfMember.address))
+  sys.spawn(LogActor(), "cluster-logger")
   sys.actorOf(classic.Props(classOf[UdpListenerActor], localInet, remoteInet, sink), "listener")
 }

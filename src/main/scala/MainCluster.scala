@@ -1,4 +1,4 @@
-
+package ClusterExample
 // Akka cluster imports
 import akka.actor.{Address, AddressFromURIString}
 import akka.actor.typed._
@@ -34,7 +34,8 @@ object ClusterExample extends App {
   val sys = ActorSystem[MemberEvent](LogActor(), "main", config)
   val cluster = Cluster(sys)
   val seedNodes: List[Address] =
-  List("akka://main@0.0.0.0:2553", "akka://main@0.0.0.0:2003").map(AddressFromURIString.parse)
+  List("akka://main@192.168.224.141:2553", "akka://main@192.168.224.88:2020").map(AddressFromURIString.parse)
+
   println(cluster.selfMember.address)
   cluster.manager ! JoinSeedNodes(seedNodes)
 }

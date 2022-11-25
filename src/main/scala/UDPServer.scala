@@ -1,6 +1,8 @@
 
 package server
 
+import ClusterExample.LogActor
+import akka.actor.AddressFromURIString
 import akka.{actor => classic}
 
 import java.net.{InetAddress, InetSocketAddress, NetworkInterface, StandardProtocolFamily}
@@ -11,7 +13,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.io.Inet.{AbstractSocketOptionV2, DatagramChannelCreator, SocketOptionV2}
 import akka.io.{IO, Udp}
 import akka.actor.typed.scaladsl.adapter._
-import akka.cluster.typed.Cluster
+import akka.cluster.typed.{Cluster, JoinSeedNodes}
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 
@@ -63,7 +65,8 @@ class ServerActor(val localInetAddr: InetSocketAddress, val udpMulticastAddr: In
   def ready(udpConnection: classic.ActorRef): Receive  ={
     case Udp.Received(data, senderIp) =>{
       sink ! data.utf8String
-      udpConnection ! Udp.Send(ByteString("ACK_FROM_SERVER"), senderIp)
+      val cluster = Cluster(context.system.toTyped)
+      udpConnection ! Udp.Send(ByteString(cluster.selfMember.address.toString), senderIp)
     }
     case b@Udp.Unbind => {
       udpConnection ! b
@@ -82,6 +85,10 @@ object MainUDP extends App {
 
   val sys = classic.ActorSystem("serverSys", config)
   val sinkActor = sys.spawn(loggerSink(), "logger")
+
+  val cluster = Cluster(sys.toTyped)
+  cluster.manager ! JoinSeedNodes(Seq(cluster.selfMember.address))
+  sys.spawn(LogActor(), "cluster-logger")
 
   sys.actorOf(classic.Props(classOf[ServerActor], localInet, multicastAddr, sinkActor), "serverActor")
 }
