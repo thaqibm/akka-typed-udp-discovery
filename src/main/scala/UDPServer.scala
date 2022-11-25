@@ -83,7 +83,5 @@ object MainUDP extends App {
   val sys = classic.ActorSystem("serverSys", config)
   val sinkActor = sys.spawn(loggerSink(), "logger")
 
-  val cluster = Cluster(sys.toTyped)
   sys.actorOf(classic.Props(classOf[ServerActor], localInet, multicastAddr, sinkActor), "serverActor")
-  println(cluster.selfMember.address)
 }
