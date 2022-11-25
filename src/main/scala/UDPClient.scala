@@ -30,7 +30,6 @@ class UdpListenerActor(localInet: InetSocketAddress, remoteInet: InetSocketAddre
     val manager = Udp(context.system).manager
     println(s"Sending req to bind to ${localInet}")
     manager ! Udp.Bind(self, localInet)
-    println(self.path.address.host)
   }
 
   override def receive: Receive = {
@@ -72,7 +71,6 @@ object UDPClient extends App {
   val sink = sys.spawn(loggerActor(), "msgLogger")
 
   val cluster = Cluster(sys.toTyped)
-  cluster.manager ! JoinSeedNodes(Seq(cluster.selfMember.address))
   sys.spawn(LogActor(), "cluster-logger")
   sys.actorOf(classic.Props(classOf[UdpListenerActor], localInet, remoteInet, sink), "listener")
 }
