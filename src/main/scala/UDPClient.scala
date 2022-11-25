@@ -1,5 +1,5 @@
 import java.net.InetSocketAddress
-import akka.actor
+import akka.{actor => classic}
 
 import java.net.{InetAddress, InetSocketAddress, NetworkInterface, StandardProtocolFamily}
 import java.net.DatagramSocket
@@ -14,35 +14,41 @@ import com.typesafe.config.ConfigFactory
 import server.{Send, UdpCmd, UdpEvent, UdpMessage, Unbound}
 
 import scala.concurrent.duration.DurationInt
-object ClientActor{
-  val TIMER_KEY = "TIMER_KEY"
-  def apply(localInet: InetSocketAddress, remoteInet: InetSocketAddress) = Behaviors.setup[UdpMessage]{
-    ctx => {
-      implicit val sys: actor.ActorSystem = ctx.system.toClassic
-      IO(Udp) ! Udp.Bind(ctx.self.toClassic, localInet)
-      Behaviors.withTimers{
-        timer => {
-          timer.startTimerWithFixedDelay(TIMER_KEY, Send(ctx.self),1.seconds)
-          Behaviors.receiveMessagePartial {
-            case UdpEvent(Udp.Received(data, senderIp), _) => {
-              println(s"Received message ${data.utf8String} from: ${senderIp}")
-              timer.cancel(TIMER_KEY)
-              Behaviors.same
-            }
-            case Send(sender) => {
-              println("Sending discovery message to server")
-              sender ! UdpCmd(Udp.Send(ByteString("CLIENT_DISCOVERY"), remoteInet), ctx.self)
-              Behaviors.same
-            }
-            case Unbound(sender) =>{
-              Behaviors.stopped
-            }
-          }
-        }
-      }
+class UdpListenerActor(localInet: InetSocketAddress, remoteInet: InetSocketAddress) extends classic.Actor with classic.Timers {
+  override def preStart(): Unit = {
+    super.preStart()
+    val manager = Udp(context.system).manager
+    println(s"Sending req to bind to ${localInet}")
+    manager ! Udp.Bind(self, localInet)
+    println(manager)
+  }
+
+  override def receive: Receive = {
+    case Udp.Bound(localAddress) => {
+      println(s"UdpConn Actor: ${sender()}")
+      println(s"Bound to ${localAddress}")
+      timers.startTimerWithFixedDelay("DISCOVERY", SendDiscovery, 1.seconds)
+      context.become(ready(sender())) // spawn new actor here with the sender ref
     }
   }
+  private def ready(udpRef: classic.ActorRef): Receive = {
+    case Udp.Received(data, senderIp) => {
+      println(s"Received ${data.utf8String} from ${senderIp}")
+    }
+    case SendDiscovery => {
+      println("Sending Discovery to server")
+      udpRef ! Udp.Send(ByteString(self.path.address.toString), remoteInet)
+    }
+    case b@Udp.Unbind => {
+      udpRef ! b
+    }
+    case Udp.Unbound => {
+      context.stop(self)
+    }
+  }
+  object SendDiscovery
 }
+
 object UDPClient extends App {
   val config = ConfigFactory.load("akka")
   val remoteInet = new InetSocketAddress(
@@ -50,5 +56,9 @@ object UDPClient extends App {
     config.getInt("udp-multicast-port")
   )
   val localInet = new InetSocketAddress(0)
-  val sys = ActorSystem(ClientActor(localInet, remoteInet), "ScalaAkkaUDPDiscoverCLient")
+  println(remoteInet)
+  println(localInet)
+  val sys = classic.ActorSystem("sys", config)
+  val ref = sys.actorOf(classic.Props(classOf[UdpListenerActor], localInet, remoteInet), "listener")
+  println(ref.path.address)
 }

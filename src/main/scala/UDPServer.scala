@@ -41,11 +41,12 @@ final case class Send(sender: ActorRef[UdpMessage]) extends UdpMessage
 final case class Unbound(sender: ActorRef[UdpMessage]) extends UdpMessage
 
 object AppActor{
-  def apply(localInet: InetSocketAddress, udpMulticastAddr: InetAddress) = Behaviors.setup[UdpMessage]{
+  def apply(localInet: InetSocketAddress, udpMulticastAddr: InetAddress) = Behaviors.setup[Any]{
     ctx =>
       implicit val sys: actor.ActorSystem = ctx.system.toClassic
       val opts = List(InetProtocolFamily(), MulticastGroup(udpMulticastAddr))
       IO(Udp) ! Udp.Bind(ctx.self.toClassic, localInet, opts)
+      /*
       Behaviors.receiveMessagePartial {
         case UdpEvent(Udp.Bound(localAddress), udpConnection) => {
           println(s"Bound from ${localAddress}, ref: ${udpConnection}")
@@ -65,6 +66,16 @@ object AppActor{
             }
           }
         }
+       */
+      Behaviors.receiveMessage{
+        msg =>
+          println(msg)
+          msg match {
+            case msgr: Udp.Received =>
+              println(s"${msgr.data.utf8String} from ${msgr.sender}")
+            case _ => {}
+          }
+          Behaviors.same
       }
   }
 }
