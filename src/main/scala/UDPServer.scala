@@ -1,7 +1,7 @@
 
 package server
 
-import akka.actor
+import akka.{actor => classic}
 import java.net.{InetAddress, InetSocketAddress, NetworkInterface, StandardProtocolFamily}
 import java.net.DatagramSocket
 import java.nio.channels.DatagramChannel
@@ -34,49 +34,41 @@ final case class MulticastGroup(group: InetAddress) extends AbstractSocketOption
   }
 }
 
-sealed trait UdpMessage
-final case class UdpEvent(event: Udp.Event, sender: ActorRef[UdpMessage]) extends UdpMessage
-final case class UdpCmd(event: Udp.Command, sender: ActorRef[UdpMessage]) extends UdpMessage
-final case class Send(sender: ActorRef[UdpMessage]) extends UdpMessage
-final case class Unbound(sender: ActorRef[UdpMessage]) extends UdpMessage
+object loggerSink{
+  def apply() = Behaviors.receiveMessage[String]{
+    msg => println(s"loggerSink: ${msg}")
+      Behaviors.same
+  }
+}
 
-object AppActor{
-  def apply(localInet: InetSocketAddress, udpMulticastAddr: InetAddress) = Behaviors.setup[Any]{
-    ctx =>
-      implicit val sys: actor.ActorSystem = ctx.system.toClassic
-      val opts = List(InetProtocolFamily(), MulticastGroup(udpMulticastAddr))
-      IO(Udp) ! Udp.Bind(ctx.self.toClassic, localInet, opts)
-      /*
-      Behaviors.receiveMessagePartial {
-        case UdpEvent(Udp.Bound(localAddress), udpConnection) => {
-          println(s"Bound from ${localAddress}, ref: ${udpConnection}")
-          Behaviors.receiveMessagePartial{
-            case UdpEvent(Udp.Received(data, senderIp), _) => {
-              println(s"Received ${data.utf8String} from ${senderIp}")
-              val send = Udp.Send(ByteString("ACK"), senderIp)
-              udpConnection ! UdpCmd(send, ctx.self)
-              Behaviors.same
-            }
-            case UdpCmd(Udp.Unbind, _) => {
-              udpConnection ! UdpCmd(Udp.Unbind, ctx.self)
-              Behaviors.same
-            }
-            case Unbound(_) => {
-              Behaviors.stopped
-            }
-          }
-        }
-       */
-      Behaviors.receiveMessage{
-        msg =>
-          println(msg)
-          msg match {
-            case msgr: Udp.Received =>
-              println(s"${msgr.data.utf8String} from ${msgr.sender}")
-            case _ => {}
-          }
-          Behaviors.same
-      }
+class ServerActor(val localInetAddr: InetSocketAddress, val udpMulticastAddr: InetAddress, sink: ActorRef[String]) extends classic.Actor {
+
+  import context._
+  override def preStart(): Unit = {
+    super.preStart()
+    val udpManager = IO(Udp)
+    val udpOpts = List(InetProtocolFamily(), MulticastGroup(udpMulticastAddr))
+    udpManager ! Udp.Bind(self, localInetAddr, udpOpts)
+  }
+
+  override def receive: Receive = {
+    case Udp.Bound(localAddress) => {
+      println(s"UDP Bound to ${localAddress}")
+      val udpConn = sender()
+      context.become(ready(udpConn))
+    }
+  }
+  def ready(udpConnection: classic.ActorRef): Receive  ={
+    case Udp.Received(data, senderIp) =>{
+      sink ! data.utf8String
+      udpConnection ! Udp.Send(ByteString("ACK_FROM_SERVER"), senderIp)
+    }
+    case b@Udp.Unbind => {
+      udpConnection ! b
+    }
+    case Udp.Unbound => {
+      stop(self)
+    }
   }
 }
 object MainUDP extends App {
@@ -85,6 +77,8 @@ object MainUDP extends App {
   val multicastStr = config.getString("udp-multicast-address")
   val localInet = new InetSocketAddress(port)
   val multicastAddr = InetAddress.getByName(multicastStr)
+  val sys = classic.ActorSystem("serverSys", config)
+  val sinkActor = sys.spawn(loggerSink(), "logger")
+  sys.actorOf(classic.Props(classOf[ServerActor], localInet, multicastAddr, sinkActor), "serverActor")
 
-  val sys = ActorSystem(AppActor(localInet, multicastAddr), "ScalaAkkaUDPDiscovery")
 }

@@ -34,7 +34,7 @@ object ClusterExample extends App {
   val sys = ActorSystem[MemberEvent](LogActor(), "main", config)
   val cluster = Cluster(sys)
   val seedNodes: List[Address] =
-  List("akka://main@127.0.0.1:2553", "akka://main@127.0.0.1:2003").map(AddressFromURIString.parse)
+  List("akka://main@0.0.0.0:2553", "akka://main@0.0.0.0:2003").map(AddressFromURIString.parse)
   println(cluster.selfMember.address)
   cluster.manager ! JoinSeedNodes(seedNodes)
 }

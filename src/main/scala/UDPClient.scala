@@ -11,33 +11,39 @@ import akka.io.{IO, Udp}
 import akka.actor.typed.scaladsl.adapter._
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
-import server.{Send, UdpCmd, UdpEvent, UdpMessage, Unbound}
-
+import akka.cluster.typed._
 import scala.concurrent.duration.DurationInt
-class UdpListenerActor(localInet: InetSocketAddress, remoteInet: InetSocketAddress) extends classic.Actor with classic.Timers {
+
+
+
+object loggerActor{
+  def apply(): Behavior[String] = Behaviors.receiveMessage{
+    msg => println(s"loggerActor: ${msg}")
+      Behaviors.same
+  }
+}
+class UdpListenerActor(localInet: InetSocketAddress, remoteInet: InetSocketAddress, sink: ActorRef[String]) extends classic.Actor with classic.Timers {
   override def preStart(): Unit = {
     super.preStart()
     val manager = Udp(context.system).manager
     println(s"Sending req to bind to ${localInet}")
     manager ! Udp.Bind(self, localInet)
-    println(manager)
+    println(self.path.address.host)
   }
 
   override def receive: Receive = {
-    case Udp.Bound(localAddress) => {
-      println(s"UdpConn Actor: ${sender()}")
-      println(s"Bound to ${localAddress}")
+    case Udp.Bound(_) => {
       timers.startTimerWithFixedDelay("DISCOVERY", SendDiscovery, 1.seconds)
       context.become(ready(sender())) // spawn new actor here with the sender ref
     }
   }
   private def ready(udpRef: classic.ActorRef): Receive = {
     case Udp.Received(data, senderIp) => {
-      println(s"Received ${data.utf8String} from ${senderIp}")
+      sink ! data.utf8String
     }
     case SendDiscovery => {
       println("Sending Discovery to server")
-      udpRef ! Udp.Send(ByteString(self.path.address.toString), remoteInet)
+      udpRef ! Udp.Send(ByteString("Hi"), remoteInet)
     }
     case b@Udp.Unbind => {
       udpRef ! b
@@ -56,9 +62,7 @@ object UDPClient extends App {
     config.getInt("udp-multicast-port")
   )
   val localInet = new InetSocketAddress(0)
-  println(remoteInet)
-  println(localInet)
   val sys = classic.ActorSystem("sys", config)
-  val ref = sys.actorOf(classic.Props(classOf[UdpListenerActor], localInet, remoteInet), "listener")
-  println(ref.path.address)
+  val sink = sys.spawn(loggerActor(), "msgLogger")
+  sys.actorOf(classic.Props(classOf[UdpListenerActor], localInet, remoteInet, sink), "listener")
 }
