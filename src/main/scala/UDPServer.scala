@@ -2,6 +2,7 @@
 package server
 
 import akka.{actor => classic}
+
 import java.net.{InetAddress, InetSocketAddress, NetworkInterface, StandardProtocolFamily}
 import java.net.DatagramSocket
 import java.nio.channels.DatagramChannel
@@ -10,6 +11,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.io.Inet.{AbstractSocketOptionV2, DatagramChannelCreator, SocketOptionV2}
 import akka.io.{IO, Udp}
 import akka.actor.typed.scaladsl.adapter._
+import akka.cluster.typed.Cluster
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 
@@ -77,8 +79,11 @@ object MainUDP extends App {
   val multicastStr = config.getString("udp-multicast-address")
   val localInet = new InetSocketAddress(port)
   val multicastAddr = InetAddress.getByName(multicastStr)
+
   val sys = classic.ActorSystem("serverSys", config)
   val sinkActor = sys.spawn(loggerSink(), "logger")
-  sys.actorOf(classic.Props(classOf[ServerActor], localInet, multicastAddr, sinkActor), "serverActor")
 
+  val cluster = Cluster(sys.toTyped)
+  sys.actorOf(classic.Props(classOf[ServerActor], localInet, multicastAddr, sinkActor), "serverActor")
+  println(cluster.selfMember.address)
 }

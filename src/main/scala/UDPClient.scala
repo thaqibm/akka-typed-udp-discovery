@@ -40,6 +40,7 @@ class UdpListenerActor(localInet: InetSocketAddress, remoteInet: InetSocketAddre
   private def ready(udpRef: classic.ActorRef): Receive = {
     case Udp.Received(data, senderIp) => {
       sink ! data.utf8String
+      timers.cancel("DISCOVERY")
     }
     case SendDiscovery => {
       println("Sending Discovery to server")
