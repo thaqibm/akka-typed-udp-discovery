@@ -4,12 +4,14 @@ import akka.actor.{Address, AddressFromURIString}
 import akka.actor.typed._
 import akka.actor.typed.javadsl.ReceiveBuilder
 import akka.actor.typed.scaladsl._
+import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.cluster.ClusterEvent._
 import akka.cluster.{ClusterEvent, MemberStatus}
 import akka.cluster.typed._
 import akka.cluster.ClusterEvent.MemberUp
 import akka.io.Inet
 import akka.util.ByteString
+import akka.cluster.metrics.{ClusterMetricsChanged, ClusterMetricsEvent, ClusterMetricsExtension}
 import com.typesafe.config.ConfigFactory
 
 // UDP Multicast imports:
@@ -17,6 +19,7 @@ import com.typesafe.config.ConfigFactory
 object LogActor{
   def apply(): Behavior[MemberEvent] = {
     Behaviors.setup { ctx =>
+      ctx.spawn(clusterMetrics(), "metrics")
       println("Created Actor")
       val cluster = Cluster(ctx.system)
       cluster.subscriptions ! Subscribe(ctx.self, classOf[MemberEvent])
@@ -29,12 +32,21 @@ object LogActor{
     }
   }
 }
+object clusterMetrics {
+  def apply(): Behavior[ClusterMetricsEvent] = Behaviors.setup{ ctx =>
+    ClusterMetricsExtension(ctx.system).subscribe(ctx.self.toClassic)
+    Behaviors.receiveMessage {
+      msg => println(msg)
+        Behaviors.same
+    }
+  }
+}
 object ClusterExample extends App {
   val config = ConfigFactory.load("akka")
   val sys = ActorSystem[MemberEvent](LogActor(), "main", config)
   val cluster = Cluster(sys)
   val seedNodes: List[Address] =
-  List("akka://main@192.168.224.141:2554", "akka://main@192.168.224.88:2020").map(AddressFromURIString.parse)
+    List("akka://main@192.168.224.141:2554", "akka://main@192.168.224.88:2020").map(AddressFromURIString.parse)
 
   println(cluster.selfMember.address)
   cluster.manager ! JoinSeedNodes(seedNodes)

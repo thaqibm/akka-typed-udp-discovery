@@ -84,6 +84,8 @@ object MainUDP extends App {
   val localInet = new InetSocketAddress(port)
   val multicastAddr = InetAddress.getByName(multicastStr)
 
+  val newAddr = new InetSocketAddress(0)
+
   val sys = classic.ActorSystem("sys", config)
   val sinkActor = sys.spawn(loggerSink(), "logger")
 
