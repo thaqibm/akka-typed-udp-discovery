@@ -1,7 +1,10 @@
 package PeerSystem
 
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import akka.io.Inet.{AbstractSocketOptionV2, DatagramChannelCreator}
-import java.net.{DatagramSocket, InetAddress, NetworkInterface, StandardProtocolFamily}
+
+import java.net.{DatagramSocket, InetAddress, InetSocketAddress, NetworkInterface, StandardProtocolFamily}
 import java.nio.channels.DatagramChannel
 import scala.jdk.CollectionConverters._
 
@@ -24,5 +27,10 @@ final case class MulticastGroup(group: InetAddress) extends AbstractSocketOption
     }
   }
 }
-class UDPServerSingleton {
+
+object UDPServerSingleton {
+  def apply(localInetAddr: InetSocketAddress, udpMulticastAddr: InetAddress) = Behaviors.setup[String] { ctx =>
+      // spawn classic: ctx.actorOf()
+      ???
+  }
 }

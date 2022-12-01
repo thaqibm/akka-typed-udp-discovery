@@ -5,8 +5,7 @@ import ClusterExample.LogActor
 import akka.actor.AddressFromURIString
 import akka.{actor => classic}
 
-import java.net.{InetAddress, InetSocketAddress, NetworkInterface, StandardProtocolFamily}
-import java.net.DatagramSocket
+import java.net.{DatagramSocket, Inet4Address, InetAddress, InetSocketAddress, NetworkInterface, StandardProtocolFamily}
 import java.nio.channels.DatagramChannel
 import akka.actor.typed._
 import akka.actor.typed.scaladsl.Behaviors
@@ -15,11 +14,15 @@ import akka.io.{IO, Udp}
 import akka.actor.typed.scaladsl.adapter._
 import akka.cluster.typed.{Cluster, Join, JoinSeedNodes}
 import akka.util.ByteString
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{ConfigFactory, ConfigValue, ConfigValueFactory}
 
 import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters._
-
+object helpers{
+    def getNetworkInterface = NetworkInterface.getNetworkInterfaces.asScala.find{
+        x => (x != null) && (x.getName.startsWith("w") || x.getName.startsWith("e"))
+    }.get
+}
 final case class InetProtocolFamily() extends DatagramChannelCreator {
     override def create(): DatagramChannel =
         DatagramChannel.open(StandardProtocolFamily.INET)
@@ -27,10 +30,7 @@ final case class InetProtocolFamily() extends DatagramChannelCreator {
 final case class MulticastGroup(group: InetAddress) extends AbstractSocketOptionV2 {
     override def afterBind(s: DatagramSocket): Unit = {
         try {
-            val networkInterface = NetworkInterface.getNetworkInterfaces.asScala.find{
-                x => (x != null) && (x.getName.startsWith("w") || x.getName.startsWith("e"))
-            }.get
-            s.getChannel.join(group, networkInterface)
+            s.getChannel.join(group, helpers.getNetworkInterface)
         }
         catch {
             case e: Throwable => e.printStackTrace()
@@ -78,7 +78,14 @@ class ServerActor(val localInetAddr: InetSocketAddress, val udpMulticastAddr: In
     }
 }
 object MainUDP extends App {
-    val config = ConfigFactory.load("akka")
+    val ipaddr = helpers.getNetworkInterface.getInetAddresses.asScala.find {
+        f => f.isInstanceOf[Inet4Address]
+    }.get.getAddress.mkString(".")
+    val config = ConfigFactory.load("akka").withValue(
+        "akka.remote.artery.canonical.hostname",
+        ConfigValueFactory.fromAnyRef(ipaddr)
+    )
+    println()
     val port = config.getInt("udp-multicast-port")
     val multicastStr = config.getString("udp-multicast-address")
     val localInet = new InetSocketAddress(port)
